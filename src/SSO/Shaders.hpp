@@ -18,7 +18,7 @@ namespace SSO::Shaders
         )"
     };
 
-    static const char *const ps_blur
+    static const char *const ps_blur_outline
     {
         R"(
         sampler2D tex_sampler : register(s0);
@@ -56,6 +56,41 @@ namespace SSO::Shaders
             sum.a = saturate(sum.a * params.x);
 
             return sum;
+        }
+        )"
+    };
+
+    static const char *const ps_solid_outline
+    {
+        R"(
+        sampler2D tex_sampler : register(s0);
+        float2    texel_size  : register(c1);
+        float4    params      : register(c2);
+
+        struct PS_INPUT {
+            float4 clr : COLOR0;
+            float2 tex : TEXCOORD0;
+        };
+
+        float4 main(PS_INPUT i) : COLOR
+        {
+            float2 uv   = i.tex;
+            float4 best = 0;
+
+            float4 t;
+
+            t = tex2D(tex_sampler, uv + float2(-1,  0) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2( 1,  0) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2( 0, -1) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2( 0,  1) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2(-1, -1) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2( 1, -1) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2(-1,  1) * texel_size); if (t.a > best.a) best = t;
+            t = tex2D(tex_sampler, uv + float2( 1,  1) * texel_size); if (t.a > best.a) best = t;
+
+            best.a = saturate(best.a * params.x);
+
+            return best;
         }
         )"
     };

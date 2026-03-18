@@ -7,7 +7,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-bool SSO::Manager::Initialize()
+bool SSO::Manager::Initialize(const Style style)
 {
     if (m_initialized) {
         return true;
@@ -19,6 +19,8 @@ bool SSO::Manager::Initialize()
         return false;
     }
 
+    m_style = style;
+
     if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &m_state_block))) {
         return false;
     }
@@ -27,8 +29,25 @@ bool SSO::Manager::Initialize()
         return false;
     }
 
-    if (FAILED(DXUtils::CompilePixelShader(device, Shaders::ps_blur, &m_ps_blur))) {
-        return false;
+    switch (m_style)
+    {
+        case Style::BLUR:
+        {
+            if (FAILED(DXUtils::CompilePixelShader(device, Shaders::ps_blur_outline, &m_ps_blur))) {
+                return false;
+            }
+
+            break;
+        }
+
+        case Style::SOLID:
+        {
+            if (FAILED(DXUtils::CompilePixelShader(device, Shaders::ps_solid_outline, &m_ps_outline))) {
+                return false;
+            }
+
+            break;
+        }
     }
 
     ComPtr<IDirect3DSurface9> rt{};
@@ -62,13 +81,16 @@ bool SSO::Manager::Initialize()
         return false;
     }
 
-    if (FAILED(device->CreateTexture(
-        desc.Width, desc.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &m_rt_tex_blur, nullptr))) {
-        return false;
-    }
+    if (m_style == Style::BLUR)
+    {
+        if (FAILED(device->CreateTexture(
+            desc.Width, desc.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &m_rt_tex_blur, nullptr))) {
+            return false;
+        }
 
-    if (FAILED(m_rt_tex_blur->GetSurfaceLevel(0, &m_surf_blur))) {
-        return false;
+        if (FAILED(m_rt_tex_blur->GetSurfaceLevel(0, &m_surf_blur))) {
+            return false;
+        }
     }
 
     m_initialized = true;
@@ -81,6 +103,7 @@ void SSO::Manager::Shutdown()
     m_state_block.Reset();
     m_ps_solid.Reset();
     m_ps_blur.Reset();
+    m_ps_outline.Reset();
     m_rt_tex_base.Reset();
     m_rt_tex_blur.Reset();
     m_msaa_surf_base.Reset();
@@ -127,12 +150,6 @@ void SSO::Manager::Render()
 
     const float rt_w{ static_cast<float>(desc.Width) };
     const float rt_h{ static_cast<float>(desc.Height) };
-
-    const float dir_h[4]{ 1.0f / rt_w, 0, 0, 0 };
-    const float p_h[4]{ 1.0f, 0.0f, 0, 0 };
-
-    const float dir_v[4]{ 0, 1.0f / rt_h, 0, 0 };
-    const float p_v[4]{ 2.0f, 1.0f, 0, 0 };
 
     const D3DVIEWPORT9 vp{
         .X = 0,
@@ -197,45 +214,82 @@ void SSO::Manager::Render()
         device->StretchRect(m_msaa_surf_base.Get(), nullptr, m_res_surf_base.Get(), nullptr, D3DTEXF_NONE);
     }
 
-    device->SetPixelShader(m_ps_blur.Get());
+    device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+    device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
-    device->SetRenderTarget(0, m_surf_blur.Get());
+    if (m_style == Style::BLUR)
     {
-        device->SetDepthStencilSurface(nullptr);
+        const float dir_h[4]{ 1.0f / rt_w, 0, 0, 0 };
+        const float p_h[4]{ 1.0f, 0.0f, 0, 0 };
 
-        device->Clear(0, 0, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        const float dir_v[4]{ 0, 1.0f / rt_h, 0, 0 };
+        const float p_v[4]{ 2.0f, 1.0f, 0, 0 };
 
-        device->SetTexture(0, m_rt_tex_base.Get());
+        device->SetPixelShader(m_ps_blur.Get());
 
-        device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-        device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-        device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-        device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        device->SetRenderTarget(0, m_surf_blur.Get());
+        {
+            device->SetDepthStencilSurface(nullptr);
 
-        device->SetPixelShaderConstantF(1, dir_h, 1);
-        device->SetPixelShaderConstantF(2, p_h, 1);
+            device->Clear(0, 0, D3DCLEAR_TARGET, 0, 1.0f, 0);
 
-        DXUtils::DrawQuad(device, rt_w, rt_h);
+            device->SetTexture(0, m_rt_tex_base.Get());
+
+            device->SetPixelShaderConstantF(1, dir_h, 1);
+            device->SetPixelShaderConstantF(2, p_h, 1);
+
+            DXUtils::DrawQuad(device, rt_w, rt_h);
+        }
+
+        device->SetRenderTarget(0, rt.Get());
+        {
+            device->SetDepthStencilSurface(m_msaa_surf_stencil.Get());
+
+            device->SetRenderState(D3DRS_STENCILENABLE, TRUE);
+            device->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_EQUAL);
+            device->SetRenderState(D3DRS_STENCILREF, 0);
+
+            device->SetTexture(0, m_rt_tex_blur.Get());
+
+            device->SetPixelShaderConstantF(1, dir_v, 1);
+            device->SetPixelShaderConstantF(2, p_v, 1);
+
+            device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+            device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+
+            DXUtils::DrawQuad(device, rt_w, rt_h);
+        }
     }
 
-    device->SetRenderTarget(0, rt.Get());
+    else
     {
-        device->SetDepthStencilSurface(m_msaa_surf_stencil.Get());
+        const float texel[4]{ 1.0f / rt_w, 1.0f / rt_h, 0.0f, 0.0f };
+        const float params[4]{ 2.0f, 0.0f, 0.0f, 0.0f };
 
-        device->SetRenderState(D3DRS_STENCILENABLE, TRUE);
-        device->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_EQUAL);
-        device->SetRenderState(D3DRS_STENCILREF, 0);
+        device->SetPixelShader(m_ps_outline.Get());
 
-        device->SetTexture(0, m_rt_tex_blur.Get());
+        device->SetRenderTarget(0, rt.Get());
+        {
+            device->SetDepthStencilSurface(m_msaa_surf_stencil.Get());
 
-        device->SetPixelShaderConstantF(1, dir_v, 1);
-        device->SetPixelShaderConstantF(2, p_v, 1);
+            device->SetRenderState(D3DRS_STENCILENABLE, TRUE);
+            device->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_EQUAL);
+            device->SetRenderState(D3DRS_STENCILREF, 0);
 
-        device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-        device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-        device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+            device->SetTexture(0, m_rt_tex_base.Get());
 
-        DXUtils::DrawQuad(device, rt_w, rt_h);
+            device->SetPixelShaderConstantF(1, texel, 1);
+            device->SetPixelShaderConstantF(2, params, 1);
+
+            device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+            device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+
+            DXUtils::DrawQuad(device, rt_w, rt_h);
+        }
     }
 
     device->SetDepthStencilSurface(ds.Get());

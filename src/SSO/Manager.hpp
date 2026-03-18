@@ -7,6 +7,8 @@
 
 namespace SSO
 {
+    enum class Style { BLUR, SOLID };
+
     class Manager final
     {
     private:
@@ -26,6 +28,7 @@ namespace SSO
         Microsoft::WRL::ComPtr<IDirect3DStateBlock9>  m_state_block{};
         Microsoft::WRL::ComPtr<IDirect3DPixelShader9> m_ps_solid{};
         Microsoft::WRL::ComPtr<IDirect3DPixelShader9> m_ps_blur{};
+        Microsoft::WRL::ComPtr<IDirect3DPixelShader9> m_ps_outline{};
         Microsoft::WRL::ComPtr<IDirect3DTexture9>     m_rt_tex_base{};
         Microsoft::WRL::ComPtr<IDirect3DTexture9>     m_rt_tex_blur{};
         Microsoft::WRL::ComPtr<IDirect3DSurface9>     m_msaa_surf_base{};
@@ -34,13 +37,14 @@ namespace SSO
         Microsoft::WRL::ComPtr<IDirect3DSurface9>     m_surf_blur{};
 
     private:
+        Style                   m_style{};
         bool                    m_initialized{};
         DXUtils::Buffer         m_skin_buf{};
         std::vector<OutlineEnt> m_ents{};
         std::vector<OutlineObj> m_objs{};
 
     public:
-        bool Initialize();
+        bool Initialize(const Style style = Style::BLUR);
         void Shutdown();
         void Render();
         void AddEntity(CEntity *const ent, const CRGBA &clr);

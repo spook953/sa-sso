@@ -10,7 +10,7 @@ public:
     {
         plugin::Events::drawHudEvent.before += [&]()
         {
-            sso_mgr.Initialize();
+            sso_mgr.Initialize(SSO::Style::BLUR);
 
             for (CPed *const ped : CPools::ms_pPedPool)
             {
