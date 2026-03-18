@@ -384,7 +384,7 @@ void SSO::RWUtils::RenderEntity(IDirect3DDevice9 *const device, CEntity *const e
     RenderObject(device, obj, skin_buf, static_cast<eEntityType>(entity->m_nType));
 }
 
-void SSO::RWUtils::RenderObject(IDirect3DDevice9 *const device, RwObject *const obj, DXUtils::Buffer &skin_buf, const eEntityType type)
+void SSO::RWUtils::RenderObject(IDirect3DDevice9 *const device, RwObject *const obj, DXUtils::Buffer &skin_buf, const eEntityType type, const RwMatrix *const mtx_override)
 {
     if (!device || !obj) {
         return;
@@ -396,7 +396,31 @@ void SSO::RWUtils::RenderObject(IDirect3DDevice9 *const device, RwObject *const 
         RenderAtomicCB(reinterpret_cast<RpAtomic *>(obj), &ctx);
     }
 
-    else if (RwObjectGetType(obj) == rpCLUMP) {
-        RpClumpForAllAtomics(reinterpret_cast<RpClump *>(obj), RenderAtomicCB, &ctx);
+    else if (RwObjectGetType(obj) == rpCLUMP)
+    {
+        RpClump *const clump{ reinterpret_cast<RpClump *>(obj) };
+
+        if (mtx_override)
+        {
+            RwFrame *const frame{ RpClumpGetFrame(clump) };
+
+            const RwMatrix saved_modelling{ frame->modelling };
+
+            frame->modelling = *mtx_override;
+            frame->modelling.flags = 0;
+
+            RwFrameGetLTM(frame);
+            RwFrameUpdateObjects(frame);
+
+            RpClumpForAllAtomics(clump, RenderAtomicCB, &ctx);
+
+            frame->modelling = saved_modelling;
+
+            RwFrameUpdateObjects(frame);
+        }
+
+        else {
+            RpClumpForAllAtomics(clump, RenderAtomicCB, &ctx);
+        }
     }
 }

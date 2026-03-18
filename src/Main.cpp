@@ -19,10 +19,6 @@ public:
                 }
                 
                 sso_mgr.AddEntity(ped, { 255, 255, 255, 255 });
-
-                if (RwObject *const weapon{ ped->m_pWeaponObject }) {
-                    sso_mgr.AddObject(weapon, { 255, 255, 255, 255 });
-                }
             }
 
             for (CVehicle *const veh : CPools::ms_pVehiclePool)

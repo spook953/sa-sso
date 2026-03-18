@@ -18,6 +18,8 @@ namespace SSO
         struct OutlineObj final {
             RwObject *obj{};
             CRGBA     clr{};
+            RwMatrix  mtx{};
+            bool      has_mtx{};
         };
 
     private:
@@ -42,6 +44,9 @@ namespace SSO
         void Shutdown();
         void Render();
         void AddEntity(CEntity *const ent, const CRGBA &clr);
-        void AddObject(RwObject *const obj, const CRGBA &clr);
+
+    private:
+        void AddObject(RwObject *const obj, const CRGBA &clr, const RwMatrix *const mtx = nullptr);
+        void AddPedWeapons(CPed *const ped, const CRGBA &clr);
     };
 }

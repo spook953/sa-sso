@@ -3,6 +3,7 @@
 #include "Shaders.hpp"
 
 #include <d3dx9.h>
+#include <ePedBones.h>
 
 using Microsoft::WRL::ComPtr;
 
@@ -188,7 +189,7 @@ void SSO::Manager::Render()
 
             device->SetPixelShaderConstantF(0, const_cast<float *>(&clr.x), 1);
 
-            RWUtils::RenderObject(device, obj.obj, m_skin_buf);
+            RWUtils::RenderObject(device, obj.obj, m_skin_buf, ENTITY_TYPE_NOTHING, obj.has_mtx ? &obj.mtx : nullptr);
         }
 
         m_objs.clear();
@@ -247,13 +248,73 @@ void SSO::Manager::AddEntity(CEntity *const ent, const CRGBA &clr)
     }
     
     m_ents.emplace_back(OutlineEnt{ ent, clr });
+
+    if (ent->m_nType == ENTITY_TYPE_PED) {
+        AddPedWeapons(static_cast<CPed *>(ent), clr);
+    }
 }
 
-void SSO::Manager::AddObject(RwObject *const obj, const CRGBA &clr)
+void SSO::Manager::AddObject(RwObject *const obj, const CRGBA &clr, const RwMatrix *const mtx)
 {
     if (!obj || clr.a == 0) {
         return;
     }
 
-    m_objs.emplace_back(OutlineObj{ obj, clr });
+    OutlineObj entry{ obj, clr, {}, mtx != nullptr };
+
+    if (mtx) {
+        entry.mtx = *mtx;
+    }
+
+    m_objs.emplace_back(entry);
+}
+
+void SSO::Manager::AddPedWeapons(CPed *const ped, const CRGBA &clr)
+{
+    if (!ped || clr.a == 0) {
+        return;
+    }
+
+    RwObject *const weapon{ ped->m_pWeaponObject };
+
+    if (!weapon) {
+        return;
+    }
+
+    RpClump *const wep_clump{ reinterpret_cast<RpClump *>(weapon) };
+
+    if (!wep_clump) {
+        return;
+    }
+
+    RwFrame *const wep_frame{ RpClumpGetFrame(wep_clump) };
+
+    if (!wep_frame) {
+        return;
+    }
+
+    const RwMatrix cur_ltm{ *RwFrameGetLTM(wep_frame) };
+
+    const CWeapon &active{ ped->m_aWeapons[ped->m_nSelectedWepSlot] };
+
+    CWeaponInfo *const info{ CWeaponInfo::GetWeaponInfo(active.m_eWeaponType, ped->GetWeaponSkill()) };
+
+    if (!info) {
+        return;
+    }
+
+    if (info && info->m_nFlags.bTwinPistol)
+    {
+        AddObject(weapon, clr, &cur_ltm);
+
+        if (RpHAnimHierarchy *const hier{ GetAnimHierarchyFromSkinClump(ped->m_pRwClump) }) {
+            const int bone_id{ active.m_eWeaponType != WEAPONTYPE_PARACHUTE ? BONE_RIGHTWRIST : BONE_SPINE1 };
+            RwMatrix *const hand{ &RpHAnimHierarchyGetMatrixArray(hier)[RpHAnimIDGetIndex(hier, bone_id)] };
+            AddObject(weapon, clr, hand);
+        }
+    }
+
+    else {
+        AddObject(weapon, clr, &cur_ltm);
+    }
 }
